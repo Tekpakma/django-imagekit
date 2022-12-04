@@ -1,3 +1,4 @@
+import os.path
 from copy import copy
 
 from django.conf import settings
@@ -20,6 +21,7 @@ class ImageCacheFile(BaseIKFile, ImageFile):
     to be deferred until the time that the cache file strategy requires it.
 
     """
+
     def __init__(self, generator, name=None, storage=None, cachefile_backend=None, cachefile_strategy=None):
         """
         :param generator: The object responsible for generating a new image.
@@ -38,31 +40,33 @@ class ImageCacheFile(BaseIKFile, ImageFile):
             try:
                 name = generator.cachefile_name
             except AttributeError:
-                fn = get_by_qname(settings.IMAGEKIT_CACHEFILE_NAMER, 'namer')
+                fn = get_by_qname(settings.IMAGEKIT_CACHEFILE_NAMER, "namer")
                 name = fn(generator)
         self.name = name
 
-        storage = (callable(storage) and storage()) or storage or \
-            getattr(generator, 'cachefile_storage', None) or get_singleton(
-            settings.IMAGEKIT_DEFAULT_FILE_STORAGE, 'file storage backend')
+        storage = (
+            (callable(storage) and storage())
+            or storage
+            or getattr(generator, "cachefile_storage", None)
+            or get_singleton(settings.IMAGEKIT_DEFAULT_FILE_STORAGE, "file storage backend")
+        )
         self.cachefile_backend = (
             cachefile_backend
-            or getattr(generator, 'cachefile_backend', None)
-            or get_singleton(settings.IMAGEKIT_DEFAULT_CACHEFILE_BACKEND,
-                             'cache file backend'))
+            or getattr(generator, "cachefile_backend", None)
+            or get_singleton(settings.IMAGEKIT_DEFAULT_CACHEFILE_BACKEND, "cache file backend")
+        )
         self.cachefile_strategy = (
             cachefile_strategy
-            or getattr(generator, 'cachefile_strategy', None)
-            or get_singleton(settings.IMAGEKIT_DEFAULT_CACHEFILE_STRATEGY,
-                             'cache file strategy')
+            or getattr(generator, "cachefile_strategy", None)
+            or get_singleton(settings.IMAGEKIT_DEFAULT_CACHEFILE_STRATEGY, "cache file strategy")
         )
 
         super().__init__(storage=storage)
 
     def _require_file(self):
-        if getattr(self, '_file', None) is None:
+        if getattr(self, "_file", None) is None:
             content_required.send(sender=self, file=self)
-            self._file = self.storage.open(self.name, 'rb')
+            self._file = self.storage.open(self.name, "rb")
 
     # The ``path`` and ``url`` properties are overridden so as to not call
     # ``_require_file``, which is only meant to be called when the file object
@@ -73,18 +77,18 @@ class ImageCacheFile(BaseIKFile, ImageFile):
     # available when its contents are required.
 
     def _storage_attr(self, attr):
-        if getattr(self, '_file', None) is None:
+        if getattr(self, "_file", None) is None:
             existence_required.send(sender=self, file=self)
         fn = getattr(self.storage, attr)
         return fn(self.name)
 
     @property
     def path(self):
-        return self._storage_attr('path')
+        return self._storage_attr("path")
 
     @property
     def url(self):
-        return self._storage_attr('url')
+        return self._storage_attr("url")
 
     def generate(self, force=False):
         """
@@ -92,7 +96,7 @@ class ImageCacheFile(BaseIKFile, ImageFile):
         whether the file already exists or not.
 
         """
-        if force or getattr(self, '_file', None) is None:
+        if force or getattr(self, "_file", None) is None:
             self.cachefile_backend.generate(self, force)
 
     def _generate(self):
@@ -110,18 +114,17 @@ class ImageCacheFile(BaseIKFile, ImageFile):
         # contents of the file, what would the point of that be?
         self.file = File(content)
 
-        if actual_name != self.name:
+        # If the storage backend didn't save the file with the requested name,
+        # create a warning
+        if os.path.normpath(actual_name) != os.path.normpath(self.name):
             get_logger().warning(
-                'The storage backend %s did not save the file with the'
+                "The storage backend %s did not save the file with the"
                 ' requested name ("%s") and instead used "%s". This may be'
-                ' because a file already existed with the requested name. If'
-                ' so, you may have meant to call generate() instead of'
-                ' generate(force=True), or there may be a race condition in the'
-                ' file backend %s. The saved file will not be used.' % (
-                    self.storage,
-                    self.name, actual_name,
-                    self.cachefile_backend
-                )
+                " because a file already existed with the requested name. If"
+                " so, you may have meant to call generate() instead of"
+                " generate(force=True), or there may be a race condition in the"
+                " file backend %s. The saved file will not be used."
+                % (self.storage, self.name, actual_name, self.cachefile_backend)
             )
 
     def __bool__(self):
@@ -137,37 +140,29 @@ class ImageCacheFile(BaseIKFile, ImageFile):
         except AttributeError:
             # All synchronous backends should have created the file as part of
             # `existence_required` if they wanted to.
-            check = getattr(self.cachefile_backend, 'is_async', False)
+            check = getattr(self.cachefile_backend, "is_async", False)
         return self.cachefile_backend.exists(self) if check else True
 
     def __getstate__(self):
         state = copy(self.__dict__)
 
         # file is hidden link to "file" attribute
-        state.pop('_file', None)
+        state.pop("_file", None)
 
         # remove storage from state as some non-FileSystemStorage can't be
         # pickled
-        settings_storage = get_singleton(
-            settings.IMAGEKIT_DEFAULT_FILE_STORAGE,
-            'file storage backend'
-        )
-        if state['storage'] == settings_storage:
-            state.pop('storage')
+        settings_storage = get_singleton(settings.IMAGEKIT_DEFAULT_FILE_STORAGE, "file storage backend")
+        if state["storage"] == settings_storage:
+            state.pop("storage")
         return state
 
     def __setstate__(self, state):
-        if 'storage' not in state:
-            state['storage'] = get_singleton(
-                settings.IMAGEKIT_DEFAULT_FILE_STORAGE,
-                'file storage backend'
-            )
+        if "storage" not in state:
+            state["storage"] = get_singleton(settings.IMAGEKIT_DEFAULT_FILE_STORAGE, "file storage backend")
         self.__dict__.update(state)
 
     def __repr__(self):
-        return smart_str("<%s: %s>" % (
-            self.__class__.__name__, self if self.name else "None")
-        )
+        return smart_str("<%s: %s>" % (self.__class__.__name__, self if self.name else "None"))
 
 
 class LazyImageCacheFile(SimpleLazyObject):
@@ -175,7 +170,8 @@ class LazyImageCacheFile(SimpleLazyObject):
         def setup():
             generator = generator_registry.get(generator_id, *args, **kwargs)
             return ImageCacheFile(generator)
+
         super().__init__(setup)
 
     def __repr__(self):
-        return '<%s: %s>' % (self.__class__.__name__, str(self) or 'None')
+        return "<%s: %s>" % (self.__class__.__name__, str(self) or "None")
